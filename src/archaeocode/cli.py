@@ -5,7 +5,8 @@ from rich.table import Table
 from sqlalchemy import func
 
 from archaeocode.extractor import RepoExtractor
-from archaeocode.models import Commit, FileChange, get_session
+from archaeocode.models import Commit, FileChange, get_session, get_engine
+from archaeocode.ownership import OwnershipAnalyzer
 
 app = typer.Typer()
 console = Console()
@@ -25,8 +26,43 @@ def analyze(
     _summary(db_path)
 
 
+@app.command()
+def ownership(
+    db_path: str = typer.Option("archaeocode.db", help="Path to indexed db"),
+    top: int = typer.Option(15, help="How many dead-file candidates to show"),
+):
+    """Show ownership evolution and dead-file candidates."""
+    engine = get_engine(db_path)
+    session = get_session(engine)
+    analyzer = OwnershipAnalyzer(session)
+
+    dead_candidates = analyzer.get_dead_file_candidates()
+    orphaned = analyzer.get_orphaned_files()
+
+    table = Table(title=f"Top {top} Likely-Dead Files")
+    table.add_column("File")
+    table.add_column("Staleness")
+    table.add_column("Created By")
+    table.add_column("Current Owner")
+    table.add_column("Days Since Touch")
+
+    for f in dead_candidates[:top]:
+        table.add_row(
+            f.file_path,
+            f"{f.staleness_score:.2f}",
+            f.created_by,
+            f.current_owner,
+            str(f.days_since_last_touch),
+        )
+    console.print(table)
+
+    console.print(f"\n[bold yellow]{len(orphaned)} orphaned files[/bold yellow] "
+                   f"(original author gone, high staleness)")
+
+    session.close()
+
+
 def _summary(db_path: str):
-    from archaeocode.models import get_engine
     engine = get_engine(db_path)
     session = get_session(engine)
 
