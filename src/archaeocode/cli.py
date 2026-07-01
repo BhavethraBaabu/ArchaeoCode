@@ -1,5 +1,5 @@
-"""ArchaeoCode CLI — Day 1: raw history extraction."""
-import typer
+"""ArchaeoCode CLI."""
+import argparse
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import func
@@ -7,46 +7,35 @@ from sqlalchemy import func
 from archaeocode.extractor import RepoExtractor
 from archaeocode.models import Commit, FileChange, get_session, get_engine
 from archaeocode.ownership import OwnershipAnalyzer
+from archaeocode.dependencies import DependencyGraphBuilder
 
-app = typer.Typer()
 console = Console()
 
 
-@app.command()
-def analyze(
-    repo_path: str = typer.Argument(..., help="Path to the local git repo to analyze"),
-    db_path: str = typer.Option("archaeocode.db", help="Output SQLite db path"),
-    limit: int = typer.Option(None, help="Limit number of commits (for quick tests)"),
-):
-    """Extract full commit + file-change history from REPO_PATH."""
-    extractor = RepoExtractor(repo_path, db_path)
-    console.print(f"[bold cyan]Excavating[/bold cyan] {repo_path} ...")
-    count = extractor.extract_all(limit=limit)
-    console.print(f"[bold green]✓ Indexed {count} commits[/bold green] into {db_path}")
-    _summary(db_path)
+def cmd_analyze(args):
+    extractor = RepoExtractor(args.repo_path, args.db)
+    console.print(f"[bold cyan]Excavating[/bold cyan] {args.repo_path} ...")
+    count = extractor.extract_all(limit=args.limit)
+    console.print(f"[bold green]Indexed {count} commits[/bold green] into {args.db}")
+    _summary(args.db)
 
 
-@app.command()
-def ownership(
-    db_path: str = typer.Option("archaeocode.db", help="Path to indexed db"),
-    top: int = typer.Option(15, help="How many dead-file candidates to show"),
-):
-    """Show ownership evolution and dead-file candidates."""
-    engine = get_engine(db_path)
+def cmd_ownership(args):
+    engine = get_engine(args.db)
     session = get_session(engine)
     analyzer = OwnershipAnalyzer(session)
 
-    dead_candidates = analyzer.get_dead_file_candidates()
+    dead = analyzer.get_dead_file_candidates()
     orphaned = analyzer.get_orphaned_files()
 
-    table = Table(title=f"Top {top} Likely-Dead Files")
+    table = Table(title=f"Top {args.top} Likely-Dead Files")
     table.add_column("File")
     table.add_column("Staleness")
     table.add_column("Created By")
     table.add_column("Current Owner")
     table.add_column("Days Since Touch")
 
-    for f in dead_candidates[:top]:
+    for f in dead[:args.top]:
         table.add_row(
             f.file_path,
             f"{f.staleness_score:.2f}",
@@ -55,20 +44,40 @@ def ownership(
             str(f.days_since_last_touch),
         )
     console.print(table)
-
-    console.print(f"\n[bold yellow]{len(orphaned)} orphaned files[/bold yellow] "
-                   f"(original author gone, high staleness)")
-
+    console.print(f"\n[bold yellow]{len(orphaned)} orphaned files[/bold yellow]")
     session.close()
 
 
-def _summary(db_path: str):
+def cmd_deps(args):
+    builder = DependencyGraphBuilder(args.repo_path)
+    console.print(f"[bold cyan]Mapping dependencies[/bold cyan] in {args.repo_path} ...")
+    graph = builder.build()
+    console.print(f"[bold green]Parsed {len(graph)} Python files[/bold green]")
+
+    if args.file:
+        blast = builder.get_blast_radius(args.file)
+        console.print(f"\n[bold]Blast radius for {args.file}:[/bold]")
+        if not blast:
+            console.print("  [yellow]Nothing in the repo imports this file[/yellow]")
+        else:
+            for dep in blast:
+                console.print(f"  - {dep}")
+        return
+
+    orphans = builder.get_orphans()
+    table = Table(title=f"Orphaned Files ({len(orphans)} found)")
+    table.add_column("File")
+    for path in orphans[:25]:
+        table.add_row(path)
+    console.print(table)
+
+
+def _summary(db_path):
     engine = get_engine(db_path)
     session = get_session(engine)
 
     total_commits = session.query(func.count(Commit.id)).scalar()
     total_files = session.query(func.count(func.distinct(FileChange.file_path))).scalar()
-
     top_authors = (
         session.query(Commit.author_name, func.count(Commit.id).label("n"))
         .group_by(Commit.author_name)
@@ -90,9 +99,32 @@ def _summary(db_path: str):
     for name, n in top_authors:
         author_table.add_row(name, str(n))
     console.print(author_table)
-
     session.close()
 
 
+def main():
+    parser = argparse.ArgumentParser(prog="archaeocode")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # analyze
+    p_analyze = sub.add_parser("analyze", help="Extract commit history from a repo")
+    p_analyze.add_argument("repo_path")
+    p_analyze.add_argument("--db", default="archaeocode.db")
+    p_analyze.add_argument("--limit", type=int, default=None)
+
+    # ownership
+    p_own = sub.add_parser("ownership", help="Show dead files and ownership evolution")
+    p_own.add_argument("--db", default="archaeocode.db")
+    p_own.add_argument("--top", type=int, default=15)
+
+    # deps
+    p_deps = sub.add_parser("deps", help="Dependency graph and blast radius")
+    p_deps.add_argument("repo_path")
+    p_deps.add_argument("--file", default=None, help="Show blast radius for this file")
+
+    args = parser.parse_args()
+    {"analyze": cmd_analyze, "ownership": cmd_ownership, "deps": cmd_deps}[args.command](args)
+
+
 if __name__ == "__main__":
-    app()
+    main()
