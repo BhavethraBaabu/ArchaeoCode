@@ -10,8 +10,21 @@ from archaeocode.ownership import OwnershipAnalyzer
 from archaeocode.dependencies import DependencyGraphBuilder
 from archaeocode.graph import TransitiveDependencyGraph, DeadFileAnalyzer
 from archaeocode.timeline import TimelineAnalyzer
+from archaeocode.nlp import CommitNLPAnalyzer
 
 console = Console()
+
+INTENT_COLORS = {
+    "feature":     "green",
+    "bugfix":      "red",
+    "refactor":    "cyan",
+    "deprecation": "magenta",
+    "docs":        "blue",
+    "test":        "yellow",
+    "chore":       "white",
+    "security":    "bright_red",
+    "performance": "bright_green",
+}
 
 
 def cmd_analyze(args):
@@ -144,7 +157,7 @@ def cmd_timeline(args):
     table.add_column("Live Files")
     table.add_column("Top Author")
 
-    for s in snapshots[-24:]:   # last 24 months by default
+    for s in snapshots[-24:]:
         net_color = "green" if s.net_change >= 0 else "red"
         table.add_row(
             s.year_month,
@@ -174,7 +187,6 @@ def cmd_deleted(args):
     table.add_column("Deleted By")
     table.add_column("Created At")
     table.add_column("Deleted At")
-
     for f in deleted[:args.top]:
         table.add_row(
             f.file_path,
@@ -186,6 +198,90 @@ def cmd_deleted(args):
             f.deleted_at.strftime("%Y-%m-%d"),
         )
     console.print(table)
+    session.close()
+
+
+def cmd_why(args):
+    """Show classified change history for a specific file."""
+    engine = get_engine(args.db)
+    session = get_session(engine)
+    analyzer = CommitNLPAnalyzer(session)
+    result = analyzer.analyze_file_history(args.file)
+
+    if not result:
+        console.print(f"[red]No history found for {args.file}[/red]")
+        session.close()
+        return
+
+    console.print(f"\n[bold]Why did [cyan]{args.file}[/cyan] change?[/bold]")
+    console.print(f"Total commits: {result.total_changes} | "
+                  f"Dominant intent: [{INTENT_COLORS.get(result.dominant_intent, 'white')}]"
+                  f"{result.dominant_intent}[/] | "
+                  f"Breaking changes: {result.breaking_change_count} | "
+                  f"Reverts: {result.revert_count}\n")
+
+    breakdown = Table(title="Intent Breakdown")
+    breakdown.add_column("Intent")
+    breakdown.add_column("Count")
+    breakdown.add_column("Bar")
+    total = result.total_changes
+    for intent, count in sorted(result.intent_breakdown.items(), key=lambda x: x[1], reverse=True):
+        bar = "█" * int((count / total) * 20)
+        color = INTENT_COLORS.get(intent, "white")
+        breakdown.add_row(f"[{color}]{intent}[/]", str(count), f"[{color}]{bar}[/]")
+    console.print(breakdown)
+
+    history_table = Table(title=f"Last {args.top} changes")
+    history_table.add_column("Date")
+    history_table.add_column("Author")
+    history_table.add_column("Intent")
+    history_table.add_column("Summary")
+    for entry in result.change_history[:args.top]:
+        color = INTENT_COLORS.get(entry["intent"], "white")
+        flag = " 💥" if entry["is_breaking"] else ""
+        history_table.add_row(
+            entry["date"],
+            entry["author"][:18],
+            f"[{color}]{entry['intent']}[/]",
+            entry["summary"][:60] + flag,
+        )
+    console.print(history_table)
+    session.close()
+
+
+def cmd_repo_intent(args):
+    """High-level breakdown of what the whole repo's history is about."""
+    engine = get_engine(args.db)
+    session = get_session(engine)
+    analyzer = CommitNLPAnalyzer(session)
+    summary = analyzer.get_repo_intent_summary()
+    bug_prone = analyzer.get_most_bug_prone_files(top=10)
+
+    total = sum(summary.values())
+    table = Table(title="Repo-wide Commit Intent Distribution")
+    table.add_column("Intent")
+    table.add_column("Commits")
+    table.add_column("% of total")
+    table.add_column("Bar")
+    for intent, count in summary.items():
+        pct = count / total * 100
+        bar = "█" * int(pct / 2)
+        color = INTENT_COLORS.get(intent, "white")
+        table.add_row(
+            f"[{color}]{intent}[/]",
+            str(count),
+            f"{pct:.1f}%",
+            f"[{color}]{bar}[/]",
+        )
+    console.print(table)
+
+    bp_table = Table(title="Most Bug-Prone Files")
+    bp_table.add_column("File")
+    bp_table.add_column("Bugfix commits")
+    for path, count in bug_prone:
+        if count > 0:
+            bp_table.add_row(path, str(count))
+    console.print(bp_table)
     session.close()
 
 
@@ -207,6 +303,7 @@ def _summary(db_path):
     table.add_row("Total commits", str(total_commits))
     table.add_row("Distinct files touched", str(total_files))
     console.print(table)
+
     author_table = Table(title="Top Contributors")
     author_table.add_column("Author")
     author_table.add_column("Commits")
@@ -250,15 +347,25 @@ def main():
     p_deleted.add_argument("--min-days", type=int, default=30)
     p_deleted.add_argument("--top", type=int, default=20)
 
+    p_why = sub.add_parser("why")
+    p_why.add_argument("file", help="File path to explain")
+    p_why.add_argument("--db", default="archaeocode.db")
+    p_why.add_argument("--top", type=int, default=15)
+
+    p_intent = sub.add_parser("intent")
+    p_intent.add_argument("--db", default="archaeocode.db")
+
     args = parser.parse_args()
     {
-        "analyze": cmd_analyze,
+        "analyze":   cmd_analyze,
         "ownership": cmd_ownership,
-        "deps": cmd_deps,
-        "blast": cmd_blast,
-        "verdict": cmd_verdict,
-        "timeline": cmd_timeline,
-        "deleted": cmd_deleted,
+        "deps":      cmd_deps,
+        "blast":     cmd_blast,
+        "verdict":   cmd_verdict,
+        "timeline":  cmd_timeline,
+        "deleted":   cmd_deleted,
+        "why":       cmd_why,
+        "intent":    cmd_repo_intent,
     }[args.command](args)
 
 
