@@ -1,8 +1,0 @@
-pyproject.toml
-src/archaeocode/cli.py
-src/archaeocode/extractor.py
-src/archaeocode/models.py
-src/archaeocode.egg-info/PKG-INFO
-src/archaeocode.egg-info/SOURCES.txt
-src/archaeocode.egg-info/dependency_links.txt
-src/archaeocode.egg-info/top_level.txt
