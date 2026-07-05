@@ -285,6 +285,78 @@ def cmd_repo_intent(args):
     session.close()
 
 
+def _print_module_summary(summary):
+    console.print(f"\n[bold cyan]{summary.file_path}[/bold cyan]")
+    console.print(f"[bold]{summary.one_liner}[/bold]\n")
+    console.print(f"[bold]Purpose:[/bold] {summary.purpose}\n")
+    console.print(f"[bold]Risk:[/bold] {summary.risk_assessment}\n")
+    console.print(f"[bold]Recommendation:[/bold] {summary.recommendation}\n")
+    if summary.key_facts:
+        console.print("[bold]Key facts:[/bold]")
+        for fact in summary.key_facts:
+            console.print(f"  • {fact}")
+
+
+def cmd_explain(args):
+    from archaeocode.ai_summarizer import AISummarizer
+
+    builder = DependencyGraphBuilder(args.repo_path)
+    graph = builder.build()
+    tdg = TransitiveDependencyGraph(graph)
+    engine = get_engine(args.db)
+    session = get_session(engine)
+    ownership_analyzer = OwnershipAnalyzer(session)
+    nlp_analyzer = CommitNLPAnalyzer(session)
+    dead_analyzer = DeadFileAnalyzer(ownership_analyzer, tdg, graph)
+    verdicts = {v.file_path: v for v in dead_analyzer.analyze_all()}
+
+    console.print(f"[bold cyan]Generating AI summary for[/bold cyan] {args.file} ...")
+    summarizer = AISummarizer()
+    summary = summarizer.summarize_file(
+        args.file,
+        ownership_analyzer.analyze_file(args.file),
+        nlp_analyzer.analyze_file_history(args.file),
+        graph.get(args.file),
+        verdicts.get(args.file),
+    )
+    _print_module_summary(summary)
+    session.close()
+
+
+def cmd_explain_repo(args):
+    from archaeocode.ai_summarizer import AISummarizer
+
+    builder = DependencyGraphBuilder(args.repo_path)
+    graph = builder.build()
+    tdg = TransitiveDependencyGraph(graph)
+    engine = get_engine(args.db)
+    session = get_session(engine)
+    ownership_analyzer = OwnershipAnalyzer(session)
+    nlp_analyzer = CommitNLPAnalyzer(session)
+    dead_analyzer = DeadFileAnalyzer(ownership_analyzer, tdg, graph)
+
+    console.print(f"[bold cyan]Summarizing top {args.top} critical files...[/bold cyan]")
+    summarizer = AISummarizer()
+    summaries = summarizer.summarize_repo(
+        ownership_analyzer,
+        nlp_analyzer,
+        graph,
+        dead_analyzer,
+        top_files=args.top,
+    )
+    for summary in summaries:
+        _print_module_summary(summary)
+        console.print()
+    session.close()
+
+
+def cmd_report(args):
+    from archaeocode.reporter import generate_report
+    console.print(f"[bold cyan]Generating HTML report...[/bold cyan]")
+    output = generate_report(args.repo_path, args.db, args.output)
+    console.print(f"[bold green]✓ Report saved to {output}[/bold green]")
+    console.print(f"[dim]Open it in your browser: open {output}[/dim]")
+
 def _summary(db_path):
     engine = get_engine(db_path)
     session = get_session(engine)
@@ -355,17 +427,35 @@ def main():
     p_intent = sub.add_parser("intent")
     p_intent.add_argument("--db", default="archaeocode.db")
 
+    p_explain = sub.add_parser("explain")
+    p_explain.add_argument("repo_path")
+    p_explain.add_argument("file")
+    p_explain.add_argument("--db", default="archaeocode.db")
+
+    p_explain_repo = sub.add_parser("explain-repo")
+    p_explain_repo.add_argument("repo_path")
+    p_explain_repo.add_argument("--db", default="archaeocode.db")
+    p_explain_repo.add_argument("--top", type=int, default=5)
+
+    p_report = sub.add_parser("report")
+    p_report.add_argument("repo_path")
+    p_report.add_argument("--db", default="archaeocode.db")
+    p_report.add_argument("--output", default="archaeocode_report.html")
+
     args = parser.parse_args()
     {
-        "analyze":   cmd_analyze,
-        "ownership": cmd_ownership,
-        "deps":      cmd_deps,
-        "blast":     cmd_blast,
-        "verdict":   cmd_verdict,
-        "timeline":  cmd_timeline,
-        "deleted":   cmd_deleted,
-        "why":       cmd_why,
-        "intent":    cmd_repo_intent,
+        "analyze":      cmd_analyze,
+        "ownership":    cmd_ownership,
+        "deps":         cmd_deps,
+        "blast":        cmd_blast,
+        "verdict":      cmd_verdict,
+        "timeline":     cmd_timeline,
+        "deleted":      cmd_deleted,
+        "why":          cmd_why,
+        "intent":       cmd_repo_intent,
+        "explain":      cmd_explain,
+        "explain-repo": cmd_explain_repo,
+        "report":       cmd_report,
     }[args.command](args)
 
 

@@ -1,3 +1,5 @@
 GitPython==3.1.43
 SQLAlchemy==2.0.35
 rich==13.9.2
+groq>=0.9.0
+python-dotenv>=1.0.0
