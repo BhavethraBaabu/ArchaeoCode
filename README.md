@@ -1,39 +1,39 @@
 # ArchaeoCode
 
-AI-powered codebase archaeology — reconstructs architecture timelines, ownership evolution,
-dependency history, and dead-code signals from a repo's git history.
+> AI-powered codebase archaeology — reconstructs architecture timelines, ownership evolution, dependency history, and dead-code signals from a repo's git history.
+
+Every codebase has files nobody understands — who wrote them, why they exist, what depends on them, whether they're safe to delete. ArchaeoCode mines git history to reconstruct that lost context automatically.
+
+---
+
+## Features
+
+| Command | What it does |
+|---|---|
+| `analyze` | Index full commit + file-change history into SQLite |
+| `ownership` | Ownership evolution, staleness scores, likely-dead files |
+| `deps` | Direct dependency graph via AST import parsing |
+| `blast` | Transitive blast radius — what breaks if you delete a file |
+| `verdict` | Unified dead-file verdict (staleness + orphan + deps combined) |
+| `timeline` | Architecture timeline — month-by-month file growth/shrink |
+| `deleted` | Deleted features detector — files that lived then disappeared |
+| `why` | NLP-classified commit intent history for any file |
+| `intent` | Repo-wide commit intent distribution + most bug-prone files |
+| `explain` | AI-generated archaeology report for a single file (Groq/Llama3.3) |
+| `explain-repo` | AI summaries for top N most critical files |
+
+---
 
 ## Install
 
 ```bash
-python -m venv venv
+git clone https://github.com/BhavethraBaabu/ArchaeoCode.git
+cd ArchaeoCode
+python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 ```
 
-## Usage
-
-Index a repo's git history into SQLite:
-
-```bash
-archaeocode analyze /path/to/repo --db archaeocode.db
-```
-
-Then explore what it found:
-
-```bash
-archaeocode ownership --db archaeocode.db --top 15   # likely-dead / orphaned files
-archaeocode deps /path/to/repo --file src/foo.py     # what imports a file
-archaeocode blast /path/to/repo --file src/foo.py    # blast radius of changing a file
-archaeocode verdict /path/to/repo --db archaeocode.db --top 20
-archaeocode timeline --db archaeocode.db             # architecture timeline
-archaeocode deleted --db archaeocode.db --min-days 30
-archaeocode why src/foo.py --db archaeocode.db       # commit history + intent for a file
-archaeocode intent --db archaeocode.db               # NLP-classified commit intents
-```
-
-## Requirements
-
-- Python >= 3.10
-- GitPython, SQLAlchemy, rich (see `requirements.txt`)
+### AI features (optional)
+Get a free Groq API key at https://console.groq.com and add it to a `.env` file at the repo root:
