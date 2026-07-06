@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArchaeoCode</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="page">
+    <section class="hero card">
+      <h1><span class="accent">Archaeo</span>Code</h1>
+      <p class="lead">
+        Paste a public GitHub repository URL. We clone it, mine the git history,
+        and generate a full archaeology report — dead files, timelines, intent
+        breakdown, and more.
+      </p>
+
+      <form id="analyze-form" class="analyze-form" action="/analyze" method="post">
+        <label for="github_url">GitHub repository URL</label>
+        <input
+          type="url"
+          id="github_url"
+          name="github_url"
+          placeholder="https://github.com/owner/repo"
+          required
+          autocomplete="url"
+        >
+        <button type="submit" id="submit-btn">
+          <span class="btn-label">Excavate repository</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <p class="hint">Public repos only. Analysis may take 30–90 seconds.</p>
+    </section>
+
+    <section class="features card">
+      <h2>What you get</h2>
+      <ul>
+        <li>Dead-file verdicts with confidence scores and orphan detection</li>
+        <li>Architecture timeline — month-by-month file growth and shrink</li>
+        <li>Deleted-feature history for files that lived then disappeared</li>
+        <li>Commit intent breakdown (feature, bugfix, refactor, and more)</li>
+        <li>Most bug-prone files ranked by fix-commit frequency</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    document.getElementById("analyze-form").addEventListener("submit", function () {
+      const btn = document.getElementById("submit-btn");
+      btn.disabled = true;
+      btn.classList.add("loading");
+      btn.querySelector(".btn-label").textContent = "Excavating…";
+    });
+  </script>
+</body>
+</html>
