@@ -12,7 +12,7 @@ from archaeocode.nlp import CommitNLPAnalyzer
 from archaeocode.models import get_engine, get_session
 
 
-def generate_report(repo_path: str, db_path: str, output_path: str = "archaeocode_report.html"):
+def generate_report_html(repo_path: str, db_path: str) -> str:
     engine = get_engine(db_path)
     session = get_session(engine)
 
@@ -24,7 +24,6 @@ def generate_report(repo_path: str, db_path: str, output_path: str = "archaeocod
     tdg = TransitiveDependencyGraph(graph)
     dead_analyzer = DeadFileAnalyzer(ownership_analyzer, tdg, graph)
 
-    # gather all data
     dead_files = dead_analyzer.get_dead()
     timeline = timeline_analyzer.build_monthly_timeline()
     deleted = timeline_analyzer.find_deleted_features(min_lifetime_days=30)
@@ -41,9 +40,13 @@ def generate_report(repo_path: str, db_path: str, output_path: str = "archaeocod
         graph=graph,
         tdg=tdg,
     )
-
-    Path(output_path).write_text(html, encoding="utf-8")
     session.close()
+    return html
+
+
+def generate_report(repo_path: str, db_path: str, output_path: str = "archaeocode_report.html"):
+    html = generate_report_html(repo_path, db_path)
+    Path(output_path).write_text(html, encoding="utf-8")
     return output_path
 
 

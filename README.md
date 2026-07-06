@@ -37,3 +37,30 @@ pip install -e .
 
 ### AI features (optional)
 Get a free Groq API key at https://console.groq.com and add it to a `.env` file at the repo root:
+
+```
+GROQ_API_KEY=your_key_here
+```
+
+---
+
+## Web app (Render)
+
+Run locally:
+
+```bash
+uvicorn archaeocode.web:app --reload --port 8000
+```
+
+Open http://localhost:8000, paste a public GitHub repo URL, and get an HTML archaeology report.
+
+### Deploy to Render
+
+1. Push this repo to GitHub.
+2. In [Render](https://render.com), click **New → Blueprint** and connect the repo (uses `render.yaml`),  
+   **or** create a **Web Service** manually:
+   - **Build:** `pip install -r requirements.txt && pip install -e .`
+   - **Start:** `uvicorn archaeocode.web:app --host 0.0.0.0 --port $PORT`
+3. No env vars required for the web report (AI `explain` commands are CLI-only).
+
+Health check: `GET /health`
